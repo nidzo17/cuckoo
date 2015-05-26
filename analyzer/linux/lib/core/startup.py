@@ -5,8 +5,8 @@
 import os
 import logging
 
-from constants import PATHS
-from results import NetlogHandler
+from lib.common.constants import PATHS
+from lib.common.results import NetlogHandler
 
 log = logging.getLogger()
 

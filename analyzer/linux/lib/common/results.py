@@ -6,7 +6,7 @@ import logging
 import socket
 import time
 
-from config import Config
+from lib.core.config import Config
 
 log = logging.getLogger(__name__)
 

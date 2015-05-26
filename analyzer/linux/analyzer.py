@@ -6,9 +6,12 @@ import traceback
 from datetime import datetime
 import os
 import time
+import pkgutil
 
 from lib.core.config import Config
 from lib.core.startup import create_folders, init_logging
+from lib.common.abstracts import Auxiliary
+from modules import auxiliary
 
 
 class Analyzer:
@@ -37,9 +40,44 @@ class Analyzer:
         # In addition DATE and TIME commands are blocking if an incorrect
         # syntax is provided, so an echo trick is used to bypass the input
         # request and not block analysis.
-        os.system("echo date {0}".format(clock.strftime("%m-%d-%y")))
-        os.system("echo time {0}".format(clock.strftime("%H:%M:%S")))
+        subprocess.call(['echo', 'date', clock.strftime("%m-%d-%y")])
+        subprocess.call(['echo', 'time', clock.strftime("%H:%M:%S")])
 
+        Auxiliary()
+        prefix = auxiliary.__name__ + "."
+        for loader, name, ispkg in pkgutil.iter_modules(auxiliary.__path__, prefix):
+            if ispkg:
+                continue
+            # Import the auxiliary module.
+            try:
+                __import__(name, globals(), locals(), ["dummy"], -1)
+            except ImportError as e:
+                log.warning("Unable to import the auxiliary module "
+                            "\"%s\": %s", name, e)
+
+        # Walk through the available auxiliary modules.
+        aux_enabled, aux_avail = [], []
+        for module in Auxiliary.__subclasses__():
+            # Try to start the auxiliary module.
+            try:
+                aux = module(self.config.get_options())
+                aux_avail.append(aux)
+                aux.start()
+                print "SCREENSHOT!"
+            except (NotImplementedError, AttributeError):
+                log.warning("Auxiliary module %s was not implemented",
+                            aux.__class__.__name__)
+                continue
+            except Exception as e:
+                log.warning("Cannot execute auxiliary module %s: %s",
+                            aux.__class__.__name__, e)
+                continue
+            finally:
+                log.debug("Started auxiliary module %s",
+                          aux.__class__.__name__)
+                aux_enabled.append(aux)
+
+        time.sleep(5)
 
         # We update the target according to its category. If it's a file, then
         # we store the path.
@@ -55,11 +93,11 @@ class Analyzer:
 
     def start(self, path):
         print path
-        print time.sleep(10)
-        proc = subprocess.Popen(path)
+        time.sleep(5)
+        proc = subprocess.Popen(['/bin/sh', path])
         print "PID:", proc.pid
         print "Return code:", proc.wait()
-
+        time.sleep(5)
         return True
 
 class CuckooPackageError(Exception):
@@ -79,6 +117,7 @@ if __name__ == "__main__":
     try:
         analyzer = Analyzer()
         target = analyzer.prepare()
+        print 'TARGET: ', target
         success = analyzer.start(target)
 
     # This is not likely to happen.
