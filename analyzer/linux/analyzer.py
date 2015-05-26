@@ -14,6 +14,10 @@ from lib.common.abstracts import Auxiliary
 from modules import auxiliary
 
 
+class CuckooPackageError(Exception):
+    pass
+
+
 class Analyzer:
     def __init__(self):
         self.config = None
@@ -33,13 +37,8 @@ class Analyzer:
 
         # Set virtual machine clock.
         clock = datetime.strptime(self.config.clock, "%Y%m%dT%H:%M:%S")
+
         # Setting date and time.
-        # NOTE: Windows system has only localized commands with date format
-        # following localization settings, so these commands for english date
-        # format cannot work in other localizations.
-        # In addition DATE and TIME commands are blocking if an incorrect
-        # syntax is provided, so an echo trick is used to bypass the input
-        # request and not block analysis.
         subprocess.call(['echo', 'date', clock.strftime("%m-%d-%y")])
         subprocess.call(['echo', 'time', clock.strftime("%H:%M:%S")])
 
@@ -100,8 +99,6 @@ class Analyzer:
         time.sleep(5)
         return True
 
-class CuckooPackageError(Exception):
-    pass
 
 def run():
     print "Printing inside guest machine"
