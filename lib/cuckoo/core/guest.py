@@ -28,7 +28,7 @@ class GuestManager:
     machines.
     """
 
-    def __init__(self, vm_id, ip, platform="windows"):
+    def __init__(self, vm_id, ip, platform="linux"):
         """@param ip: guest's IP address.
         @param platform: guest's operating system type.
         """

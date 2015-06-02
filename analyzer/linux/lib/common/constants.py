@@ -5,7 +5,7 @@
 import os
 
 
-ROOT = '/home/nidzo'
+ROOT = os.environ['HOME']
 
 PATHS = {"root": ROOT,
          "temp": os.path.join(ROOT, "tmp"),

@@ -10,15 +10,16 @@ import pkgutil
 import hashlib
 import random
 import socket
-import tempfile
 import signal
+import tempfile
 
+from lib.common.constants import PATHS
 from lib.core.config import Config
 from lib.core.startup import create_folders, init_logging
 from lib.common.abstracts import Auxiliary
 from lib.common.hashing import hash_file
 from modules import auxiliary
-from lib.common.results import upload_to_host
+from lib.common.results import upload_to_host, NetlogHandler
 
 
 log = logging.getLogger()
@@ -108,6 +109,16 @@ def terminate_process(pid):
     os.kill(pid, signal.SIGKILL)  # or signal.SIGQUIT
 
 
+class SysdigParser:
+    def __init__(self):
+        pass
+
+    def process(self, thread_tid, evt_type, evt_args):
+        if evt_type == 'open' or evt_type == 'creat':
+            # dump_file(file_path)
+            print "=====> dump_file ", evt_args
+
+
 class Analyzer:
     def __init__(self):
         self.config = None
@@ -145,7 +156,11 @@ class Analyzer:
         print self.config.file_name
 
         if self.config.category == "file":
-            self.target = os.path.join(tempfile.gettempdir(), str(self.config.file_name))
+            # self.target = os.path.join(tempfile.gettempdir(), str(self.config.file_name))
+            self.target = os.path.join('/tmp', str(self.config.file_name))
+            # self.target = os.path.join(PATHS["temp"], str(self.config.file_name))
+
+
         # If it's a URL, well.. we store the URL.
         else:
             self.target = self.config.target
@@ -198,14 +213,32 @@ class Analyzer:
 
     def start(self, path):
         print path
-        time.sleep(5)
+        time.sleep(2)
+        os.chmod(path, 0755)
         proc = subprocess.Popen(['/bin/bash', '-c', path])
-        # proc = subprocess.Popen(path, shell=True)
+        # proc = subprocess.Popen([sys.executable, path])
+        # proc = subprocess.Popen(path, shell=True)  # security holes
 
         print "PID:", proc.pid
-        print "Return code:", proc.wait()
-        time.sleep(5)
+        # print "Return code:", proc.wait()
+
         return proc.pid
+
+
+    def execute(self, pid):
+        parser = SysdigParser()
+        sysdig_monitor = subprocess.Popen(['sudo', 'sysdig', 'proc.pid = ', '%s' % pid], stdout=subprocess.PIPE)
+        lines_iterator = iter(sysdig_monitor.stdout.readline, b"")
+
+        for line in lines_iterator:
+            splitted_line = line.split()
+            (evt_num, evt_time, evt_cpu, proc_name, thread_tid, evt_dir, evt_type), evt_args = \
+                splitted_line[:7], splitted_line[8:]
+
+            parser.process(thread_tid, evt_type, evt_args)
+
+            if thread_tid == pid and evt_type == 'procexit':
+                break
 
     def run(self):
         """Run analysis.
@@ -214,11 +247,17 @@ class Analyzer:
         self.prepare()
 
         log.debug("Starting analyzer from: %s", os.getcwd())
-        log.debug("Storing results at: %s", '/home/tmp')
+        log.debug("Storing results at: %s", PATHS["temp"])
 
         aux_enabled, aux_avail = self.run_auxiliary()
 
+        # call execute method + monitor (and parser)
+
         pids = self.start(self.target)
+
+        self.execute(pids)
+        # sysdig_monitor = subprocess.Popen(['sudo', 'sysdig', 'proc.pid = ', '%s' % pids], stdout=subprocess.PIPE)
+
 
         # If the analysis package returned a list of process IDs, we add them
         # to the list of monitored processes and enable the process monitor.
@@ -244,7 +283,8 @@ class Analyzer:
 
         while True:
             time_counter += 1
-            if time_counter == int(self.config.timeout):
+            # if time_counter == int(self.config.timeout):
+            if time_counter == 22:
                 log.info("Analysis timeout hit, terminating analysis.")
                 break
 
@@ -271,7 +311,7 @@ class Analyzer:
 
             finally:
                 # Zzz.
-                time.Sleep(1)
+                time.sleep(1)
 
 
         # TODO: check memdump conf option and call memory dump and Upload files
@@ -350,4 +390,4 @@ if __name__ == "__main__":
     finally:
         # Establish connection with the agent XMLRPC server.
         server = xmlrpclib.Server("http://127.0.0.1:8000")
-        server.complete(success, error, '/home/tmp')
+        server.complete(success, error, PATHS["root"])

@@ -21,7 +21,7 @@ SKIP_AREA = None
 def take():
     w = gtk.gdk.get_default_root_window()
     sz = w.get_size()
-    print "The size of the window is %d x %d" % sz
+    #print "The size of the window is %d x %d" % sz
     pb = gtk.gdk.Pixbuf(gtk.gdk.COLORSPACE_RGB, False, 8, sz[0], sz[1])
     pb = pb.get_from_drawable(w, w.get_colormap(), 0, 0, 0, 0, sz[0], sz[1])
     if (pb != None):
@@ -65,7 +65,7 @@ class Screenshots(Auxiliary, Thread):
             img_counter += 1
             img_current.save('screenshot.jpg', "jpeg")
 
-            print "Sending photo..."
+            #print "Sending photo..."
             upload_to_host('screenshot.jpg', "shots/%s.jpg" % str(img_counter).rjust(4, "0"))
 
         return True
