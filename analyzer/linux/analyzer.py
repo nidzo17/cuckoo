@@ -63,6 +63,12 @@ def is_process_alive(pid):
     else:
         return True
 
+def add_file(file_path):
+    """Add a file to file list."""
+    if file_path not in FILES_LIST:
+        log.info("Added new file to list with path: %s",
+                 unicode(file_path).encode("utf-8", "replace"))
+        FILES_LIST.append(file_path)
 
 def dump_file(file_path):
     """Create a copy of the given file path."""
@@ -83,8 +89,7 @@ def dump_file(file_path):
     # Check if the path has a valid file name, otherwise it's a directory
     # and we should abort the dump.
     if file_path:
-        # Should be able to extract Alternate Data Streams names too.
-        file_name = file_path[file_path.find(":") + 1:]
+        file_name = os.path.basename(file_path)
     else:
         return
 
@@ -100,6 +105,7 @@ def dump_file(file_path):
 
 
 def dump_files():
+    print "============== DUMPAM ==========="
     """Dump all the dropped files."""
     for file_path in FILES_LIST:
         dump_file(file_path)
@@ -114,9 +120,17 @@ class SysdigParser:
         pass
 
     def process(self, thread_tid, evt_type, evt_args):
+        # In case of open or creat, the client is trying to notify the creation
+        # of a new file.
         if evt_type == 'open' or evt_type == 'creat':
             # dump_file(file_path)
-            print "=====> dump_file ", evt_args
+            print "=====> FILE CREATED !!! ", evt_args
+            for evt_arg in evt_args:
+                if 'name=' in evt_arg:
+                    # We extract the file path.
+                    file_path = evt_arg.split('(')[1][:-1]
+                    # We add the file to the list.
+                    add_file(file_path)
 
 
 class Analyzer:
@@ -234,10 +248,11 @@ class Analyzer:
             splitted_line = line.split()
             (evt_num, evt_time, evt_cpu, proc_name, thread_tid, evt_dir, evt_type), evt_args = \
                 splitted_line[:7], splitted_line[8:]
-
+            thread_tid = int(thread_tid[1:-1])
             parser.process(thread_tid, evt_type, evt_args)
 
             if thread_tid == pid and evt_type == 'procexit':
+                #sysdig_monitor.terminate()
                 break
 
     def run(self):
@@ -284,7 +299,7 @@ class Analyzer:
         while True:
             time_counter += 1
             # if time_counter == int(self.config.timeout):
-            if time_counter == 22:
+            if time_counter == 5:
                 log.info("Analysis timeout hit, terminating analysis.")
                 break
 
