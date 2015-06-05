@@ -4,6 +4,7 @@
 
 import time
 import logging
+import os
 from threading import Thread
 
 from lib.common.abstracts import Auxiliary
@@ -63,9 +64,10 @@ class Screenshots(Auxiliary, Thread):
                 continue
 
             img_counter += 1
-            img_current.save('screenshot.jpg', "jpeg")
+            img_current.save('/tmp/screenshot.jpg', "jpeg")
 
             #print "Sending photo..."
-            upload_to_host('screenshot.jpg', "shots/%s.jpg" % str(img_counter).rjust(4, "0"))
+            upload_to_host('/tmp/screenshot.jpg', "shots/%s.jpg" % str(img_counter).rjust(4, "0"))
+            os.unlink('/tmp/screenshot.jpg')
 
         return True

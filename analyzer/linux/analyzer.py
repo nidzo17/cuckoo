@@ -11,15 +11,16 @@ import hashlib
 import random
 import socket
 import signal
-import tempfile
+import threading
 
 from lib.common.constants import PATHS
 from lib.core.config import Config
+from lib.common.exceptions import CuckooError
 from lib.core.startup import create_folders, init_logging
 from lib.common.abstracts import Auxiliary
 from lib.common.hashing import hash_file
 from modules import auxiliary
-from lib.common.results import upload_to_host, NetlogHandler
+from lib.common.results import upload_to_host
 
 
 log = logging.getLogger()
@@ -70,6 +71,15 @@ def add_file(file_path):
                  unicode(file_path).encode("utf-8", "replace"))
         FILES_LIST.append(file_path)
 
+def del_file(file_path):
+    dump_file(file_path)
+
+    # If this filename exists in the FILES_LIST, then delete it, because it
+    # doesn't exist anymore anyway.
+    if file_path in FILES_LIST:
+        FILES_LIST.pop(FILES_LIST.index(file_path))
+
+
 def dump_file(file_path):
     """Create a copy of the given file path."""
     try:
@@ -105,7 +115,6 @@ def dump_file(file_path):
 
 
 def dump_files():
-    print "============== DUMPAM ==========="
     """Dump all the dropped files."""
     for file_path in FILES_LIST:
         dump_file(file_path)
@@ -119,18 +128,22 @@ class SysdigParser:
     def __init__(self):
         pass
 
-    def process(self, thread_tid, evt_type, evt_args):
+    def process(self, thread_tid, evt_type, evt_args, evt_dir):
         # In case of open or creat, the client is trying to notify the creation
         # of a new file.
-        if evt_type == 'open' or evt_type == 'creat':
-            # dump_file(file_path)
-            print "=====> FILE CREATED !!! ", evt_args
+        if (evt_type == 'open' or evt_type == 'creat') and evt_dir == '<':
             for evt_arg in evt_args:
+                # args: name=file_name(file_path)
                 if 'name=' in evt_arg:
                     # We extract the file path.
                     file_path = evt_arg.split('(')[1][:-1]
                     # We add the file to the list.
                     add_file(file_path)
+
+        elif evt_type == 'unlink' and evt_dir == '<':
+            # args: path=file_path
+            file_path = evt_args[4:]
+            del_file(file_path)
 
 
 class Analyzer:
@@ -227,17 +240,17 @@ class Analyzer:
 
     def start(self, path):
         print path
-        time.sleep(2)
+
         os.chmod(path, 0755)
         proc = subprocess.Popen(['/bin/bash', '-c', path])
         # proc = subprocess.Popen([sys.executable, path])
         # proc = subprocess.Popen(path, shell=True)  # security holes
 
         print "PID:", proc.pid
+
         # print "Return code:", proc.wait()
 
-        return proc.pid
-
+        return proc
 
     def execute(self, pid):
         parser = SysdigParser()
@@ -249,7 +262,7 @@ class Analyzer:
             (evt_num, evt_time, evt_cpu, proc_name, thread_tid, evt_dir, evt_type), evt_args = \
                 splitted_line[:7], splitted_line[8:]
             thread_tid = int(thread_tid[1:-1])
-            parser.process(thread_tid, evt_type, evt_args)
+            parser.process(thread_tid, evt_type, evt_args, evt_dir)
 
             if thread_tid == pid and evt_type == 'procexit':
                 #sysdig_monitor.terminate()
@@ -267,10 +280,16 @@ class Analyzer:
         aux_enabled, aux_avail = self.run_auxiliary()
 
         # call execute method + monitor (and parser)
+        try:
+            process = self.start(self.target)
 
-        pids = self.start(self.target)
+        except Exception as e:
+            raise CuckooError("The Linux binary package start function encountered "
+                              "an unhandled exception: ", str(e))
+        pids = process.pid
+        monitor_thread = threading.Thread(target=self.execute, args=(pids,))
+        monitor_thread.start()
 
-        self.execute(pids)
         # sysdig_monitor = subprocess.Popen(['sudo', 'sysdig', 'proc.pid = ', '%s' % pids], stdout=subprocess.PIPE)
 
 
@@ -298,16 +317,17 @@ class Analyzer:
 
         while True:
             time_counter += 1
-            # if time_counter == int(self.config.timeout):
-            if time_counter == 5:
+            if time_counter == int(self.config.timeout):
                 log.info("Analysis timeout hit, terminating analysis.")
                 break
-
             try:
                 # If the process monitor is enabled we start checking whether
                 # the monitored processes are still alive.
                 if pid_check:
                     for pid in PROCESS_LIST:
+                        # deadlock because reading from stdou subporecss.PIPE
+                        # poll() fixed it
+                        process.poll()
                         if not is_process_alive(pid):
                             log.info("Process with pid %s has terminated", pid)
                             PROCESS_LIST.remove(pid)
