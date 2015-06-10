@@ -383,8 +383,9 @@ def remove(request, task_id):
         # Delete dups too.
         for analysis in anals:
             # Delete sample if not used.
-            if results_db.analysis.find({"target.file_id": ObjectId(analysis["target"]["file_id"])}).count() == 1:
-                fs.delete(ObjectId(analysis["target"]["file_id"]))
+            if "file_id" in analysis["target"]:
+                if results_db.analysis.find({"target.file_id": ObjectId(analysis["target"]["file_id"])}).count() == 1:
+                    fs.delete(ObjectId(analysis["target"]["file_id"]))
             # Delete screenshots.
             for shot in analysis["shots"]:
                 if results_db.analysis.find({"shots": ObjectId(shot)}).count() == 1:
@@ -392,6 +393,11 @@ def remove(request, task_id):
             # Delete network pcap.
             if "pcap_id" in analysis["network"] and results_db.analysis.find({"network.pcap_id": ObjectId(analysis["network"]["pcap_id"])}).count() == 1:
                 fs.delete(ObjectId(analysis["network"]["pcap_id"]))
+            
+            # Delete sorted pcap
+            if "sorted_pcap_id" in analysis["network"] and results_db.analysis.find({"network.sorted_pcap_id": ObjectId(analysis["network"]["sorted_pcap_id"])}).count() == 1:
+                fs.delete(ObjectId(analysis["network"]["sorted_pcap_id"]))
+                
             # Delete dropped.
             for drop in analysis["dropped"]:
                 if "object_id" in drop and results_db.analysis.find({"dropped.object_id": ObjectId(drop["object_id"])}).count() == 1:
