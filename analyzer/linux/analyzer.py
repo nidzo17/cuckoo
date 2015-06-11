@@ -64,12 +64,14 @@ def is_process_alive(pid):
     else:
         return True
 
+
 def add_file(file_path):
     """Add a file to file list."""
     if file_path not in FILES_LIST:
         log.info("Added new file to list with path: %s",
                  unicode(file_path).encode("utf-8", "replace"))
         FILES_LIST.append(file_path)
+
 
 def del_file(file_path):
     dump_file(file_path)
@@ -124,6 +126,22 @@ def terminate_process(pid):
     os.kill(pid, signal.SIGKILL)  # or signal.SIGQUIT
 
 
+def execute(pid):
+    parser = SysdigParser()
+    sysdig_monitor = subprocess.Popen(['sudo', 'sysdig', 'proc.pid = ', '%s' % pid], stdout=subprocess.PIPE)
+    lines_iterator = iter(sysdig_monitor.stdout.readline, b"")
+
+    for line in lines_iterator:
+        splitted_line = line.split()
+        (evt_num, evt_time, evt_cpu, proc_name, thread_tid, evt_dir, evt_type), evt_args = \
+            splitted_line[:7], splitted_line[8:]
+        thread_tid = int(thread_tid[1:-1])
+        parser.process(thread_tid, evt_type, evt_args, evt_dir)
+
+        if thread_tid == pid and evt_type == 'procexit':
+            # sysdig_monitor.terminate()
+            break
+
 class SysdigParser:
     def __init__(self):
         pass
@@ -144,6 +162,16 @@ class SysdigParser:
             # args: path=file_path
             file_path = evt_args[4:]
             del_file(file_path)
+
+        elif evt_type == 'clone' and evt_dir == '<':
+            # ps -o pid -p 20004 --noheaders
+            print "CLONE: ", evt_args
+            # FIND CHILD PROCESS ID
+            ps_command = subprocess.Popen(['pgrep', '-P', '%d' % thread_tid], stdout=subprocess.PIPE)
+            child_pid = ps_command.stdout.readline()
+
+            thr = threading.Thread(target=execute, args=(child_pid,))
+            thr.start()
 
 
 class Analyzer:
@@ -186,7 +214,6 @@ class Analyzer:
             # self.target = os.path.join(tempfile.gettempdir(), str(self.config.file_name))
             self.target = os.path.join('/tmp', str(self.config.file_name))
             # self.target = os.path.join(PATHS["temp"], str(self.config.file_name))
-
 
         # If it's a URL, well.. we store the URL.
         else:
@@ -252,22 +279,6 @@ class Analyzer:
 
         return proc
 
-    def execute(self, pid):
-        parser = SysdigParser()
-        sysdig_monitor = subprocess.Popen(['sudo', 'sysdig', 'proc.pid = ', '%s' % pid], stdout=subprocess.PIPE)
-        lines_iterator = iter(sysdig_monitor.stdout.readline, b"")
-
-        for line in lines_iterator:
-            splitted_line = line.split()
-            (evt_num, evt_time, evt_cpu, proc_name, thread_tid, evt_dir, evt_type), evt_args = \
-                splitted_line[:7], splitted_line[8:]
-            thread_tid = int(thread_tid[1:-1])
-            parser.process(thread_tid, evt_type, evt_args, evt_dir)
-
-            if thread_tid == pid and evt_type == 'procexit':
-                #sysdig_monitor.terminate()
-                break
-
     def run(self):
         """Run analysis.
         @return: operation status.
@@ -287,7 +298,7 @@ class Analyzer:
             raise CuckooError("The Linux binary package start function encountered "
                               "an unhandled exception: ", str(e))
         pids = process.pid
-        monitor_thread = threading.Thread(target=self.execute, args=(pids,))
+        monitor_thread = threading.Thread(target=execute, args=(pids,))
         monitor_thread.start()
 
         # sysdig_monitor = subprocess.Popen(['sudo', 'sysdig', 'proc.pid = ', '%s' % pids], stdout=subprocess.PIPE)

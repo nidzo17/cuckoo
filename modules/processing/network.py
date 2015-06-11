@@ -329,7 +329,7 @@ class Pcap:
         @param domain: domain name.
         """
         filters = [
-            ".*\\.windows\\.com$",
+            ".*\\.linux\\.com$",
             ".*\\.in\\-addr\\.arpa$"
         ]
 
@@ -685,8 +685,9 @@ class SortCap(object):
         return self
 
     def close(self):
-        self.fd.close()
-        self.fd = None
+        if self.fd is not None:
+            self.fd.close()
+            self.fd = None
 
     def next(self):
         rp = next(self.fditer)
