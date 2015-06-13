@@ -329,7 +329,7 @@ class Pcap:
         @param domain: domain name.
         """
         filters = [
-            ".*\\.linux\\.com$",
+            ".*\\.windows\\.com$",
             ".*\\.in\\-addr\\.arpa$"
         ]
 

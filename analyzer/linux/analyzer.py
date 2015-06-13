@@ -128,7 +128,8 @@ def terminate_process(pid):
 
 def execute(pid):
     parser = SysdigParser()
-    sysdig_monitor = subprocess.Popen(['sudo', 'sysdig', 'proc.pid = ', '%s' % pid], stdout=subprocess.PIPE)
+    sysdig_monitor = subprocess.Popen(['sudo', 'sysdig', 'proc.pid = ', '%s' % pid, 'or proc.apid = ', '%s' % pid],
+                                      stdout=subprocess.PIPE)
     lines_iterator = iter(sysdig_monitor.stdout.readline, b"")
 
     for line in lines_iterator:
@@ -142,6 +143,7 @@ def execute(pid):
             # sysdig_monitor.terminate()
             break
 
+
 class SysdigParser:
     def __init__(self):
         pass
@@ -149,29 +151,29 @@ class SysdigParser:
     def process(self, thread_tid, evt_type, evt_args, evt_dir):
         # In case of open or creat, the client is trying to notify the creation
         # of a new file.
+
         if (evt_type == 'open' or evt_type == 'creat') and evt_dir == '<':
             for evt_arg in evt_args:
                 # args: name=file_name(file_path)
-                if 'name=' in evt_arg:
+                if evt_arg.startswith('name='):
                     # We extract the file path.
-                    file_path = evt_arg.split('(')[1][:-1]
+                    #file_path = evt_arg.split('(')[1][:-1]
+                    file_name = evt_arg[5:]
+                    file_path = os.path.abspath(file_name)
                     # We add the file to the list.
                     add_file(file_path)
 
-        elif evt_type == 'unlink' and evt_dir == '<':
+        elif evt_type == 'unlink' and evt_dir == '>':
             # args: path=file_path
-            file_path = evt_args[4:]
+            file_path = evt_args[5:]
             del_file(file_path)
 
-        elif evt_type == 'clone' and evt_dir == '<':
-            # ps -o pid -p 20004 --noheaders
-            print "CLONE: ", evt_args
-            # FIND CHILD PROCESS ID
-            ps_command = subprocess.Popen(['pgrep', '-P', '%d' % thread_tid], stdout=subprocess.PIPE)
-            child_pid = ps_command.stdout.readline()
-
-            thr = threading.Thread(target=execute, args=(child_pid,))
-            thr.start()
+        elif evt_type == 'unlinkat' and evt_dir == '>':
+            for evt_arg in evt_args:
+                if evt_arg.startswith('name='):
+                    file_name = evt_arg[5:]
+                    file_path = os.path.abspath(file_name)
+                    del_file(file_path)
 
 
 class Analyzer:
