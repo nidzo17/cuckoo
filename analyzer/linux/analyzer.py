@@ -82,6 +82,17 @@ def del_file(file_path):
         FILES_LIST.pop(FILES_LIST.index(file_path))
 
 
+def move_file(old_path, new_path):
+    # Check whether the old filename is in the FILES_LIST.
+    if old_path.lower() in FILES_LIST:
+
+        # Get the index of the old filename.
+        idx = FILES_LIST.index(old_path.lower())
+
+        # Replace the old filename by the new filename.
+        FILES_LIST[idx] = new_path
+
+
 def dump_file(file_path):
     """Create a copy of the given file path."""
     try:
@@ -132,26 +143,39 @@ def execute(pid):
                                       stdout=subprocess.PIPE)
     lines_iterator = iter(sysdig_monitor.stdout.readline, b"")
 
-    for line in lines_iterator:
-        splitted_line = line.split()
-        (evt_num, evt_time, evt_cpu, proc_name, thread_tid, evt_dir, evt_type), evt_args = \
-            splitted_line[:7], splitted_line[8:]
-        thread_tid = int(thread_tid[1:-1])
-        parser.process(thread_tid, evt_type, evt_args, evt_dir)
+    for event in lines_iterator:
+        parser.process(event)
 
-        if thread_tid == pid and evt_type == 'procexit':
-            # sysdig_monitor.terminate()
-            break
-
+def execute2():
+    sysdig_monitor = subprocess.Popen(['sudo', 'sysdig', '-s 2000', '-A',
+                              '-c%s' % 'echo_fds', 'fd.port=80 and evt.buffer contains GET'],
+                             stdout=subprocess.PIPE)
+    lines_iterator = iter(sysdig_monitor.stdout.readline, b"")
+    for event in lines_iterator:
+        event_info = event.split()
+        if event_info > 0:
+            if 'Write' in event_info:
+                ip_adresses = event_info[5]
+            elif 'GET' in event_info:
+                link = event_info[1]
+            elif 'Host:' in event_info:
+                host = event_info[1]
+                print '================================================================'
+                print "SALJEM NA OBRADU: ", (ip_adresses, link, host)
+                print '================================================================'
+                time.sleep(5)
 
 class SysdigParser:
     def __init__(self):
         pass
 
-    def process(self, thread_tid, evt_type, evt_args, evt_dir):
+    def process(self, event):
+        event_info = event.split()
+        (evt_num, evt_time, evt_cpu, proc_name, thread_tid, evt_dir, evt_type), evt_args = \
+            event_info[:7], event_info[8:]
+
         # In case of open or creat, the client is trying to notify the creation
         # of a new file.
-
         if (evt_type == 'open' or evt_type == 'creat') and evt_dir == '<':
             for evt_arg in evt_args:
                 # args: name=file_name(file_path)
@@ -175,6 +199,25 @@ class SysdigParser:
                     file_path = os.path.abspath(file_name)
                     del_file(file_path)
 
+        elif evt_type == 'rename':
+            for evt_arg in evt_args:
+                if evt_arg.startswith('oldpath='):
+                    old_name = evt_arg[8:]
+                    old_path = os.path.abspath(old_name)
+                elif evt_arg.startswith('newpath='):
+                    new_name = evt_arg[8:]
+                    new_path = os.path.abspath(new_name)
+            if 'old_path' in locals() and 'new_path' in locals():
+                move_file(old_path.decode("utf-8"), new_path.decode("utf-8"))
+
+        elif evt_type == 'connect' and evt_dir == '<':
+            for evt_arg in evt_args:
+                if evt_arg.startswith('tuple='):
+                    ip_addresses = evt_arg[6:]
+                    if not ip_addresses == '0.0.0.0:0->0.0.0.0:0':
+                        with open('linux.log', "a") as outfile:
+                            outfile.write(evt_arg)
+                            outfile.write("%s\n" % ip_addresses)
 
 class Analyzer:
     def __init__(self):
@@ -250,6 +293,7 @@ class Analyzer:
             try:
                 aux = module(self.config.get_options())
                 aux_avail.append(aux)
+
                 aux.start()
                 print "SCREENSHOT!"
             except (NotImplementedError, AttributeError):
@@ -271,15 +315,15 @@ class Analyzer:
         print path
 
         os.chmod(path, 0755)
-        proc = subprocess.Popen(['/bin/bash', '-c', path])
+        process = subprocess.Popen(['/bin/bash', '-c', path])
         # proc = subprocess.Popen([sys.executable, path])
         # proc = subprocess.Popen(path, shell=True)  # security holes
 
-        print "PID:", proc.pid
+        print "PID:", process.pid
 
         # print "Return code:", proc.wait()
 
-        return proc
+        return process
 
     def run(self):
         """Run analysis.
@@ -292,6 +336,13 @@ class Analyzer:
 
         aux_enabled, aux_avail = self.run_auxiliary()
 
+        with open('linux.log', "a") as outfile:
+            file_info = subprocess.Popen(['file', self.target], stdout=subprocess.PIPE)
+            if "dynamically linked" in file_info.communicate()[0]:
+                outfile.write("SHARED LIBRARY DEPENDENCIES\n")
+                subprocess.call(['ldd', self.target], stdout=outfile)
+            outfile.write("\n\n===========================\n\n       IP ADDRESSES\n")
+
         # call execute method + monitor (and parser)
         try:
             process = self.start(self.target)
@@ -299,9 +350,13 @@ class Analyzer:
         except Exception as e:
             raise CuckooError("The Linux binary package start function encountered "
                               "an unhandled exception: ", str(e))
+
         pids = process.pid
         monitor_thread = threading.Thread(target=execute, args=(pids,))
         monitor_thread.start()
+
+        #network_monitor_thread = threading.Thread(target=execute2)
+        #network_monitor_thread.start()
 
         # sysdig_monitor = subprocess.Popen(['sudo', 'sysdig', 'proc.pid = ', '%s' % pids], stdout=subprocess.PIPE)
 
@@ -338,7 +393,7 @@ class Analyzer:
                 # the monitored processes are still alive.
                 if pid_check:
                     for pid in PROCESS_LIST:
-                        # deadlock because reading from stdou subporecss.PIPE
+                        # deadlock because reading from stdout subporecss.PIPE
                         # poll() fixed it
                         process.poll()
                         if not is_process_alive(pid):
@@ -397,6 +452,7 @@ class Analyzer:
                 log.warning("Exception running finish callback of auxiliary "
                             "module %s: %s", aux.__class__.__name__, e)
 
+        upload_to_host('hablo', 'logs/hablo')
         # Let's invoke the completion procedure.
         self.complete()
 
