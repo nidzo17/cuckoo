@@ -8,7 +8,7 @@ class LinuxModule(Processing):
 
     def run(self):
         self.key = "linux"
-        fajl = os.path.join(self.analysis_path, 'logs', 'hablo')
+        fajl = os.path.join(self.analysis_path, 'logs', 'linux.log')
 
         if not os.path.exists(fajl):
             raise CuckooProcessingError("Sample file doesn't exist: \"%s\"" % fajl)

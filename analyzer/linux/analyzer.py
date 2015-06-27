@@ -216,7 +216,7 @@ class SysdigParser:
                     ip_addresses = evt_arg[6:]
                     if not ip_addresses == '0.0.0.0:0->0.0.0.0:0':
                         with open('linux.log', "a") as outfile:
-                            outfile.write(evt_arg)
+                            #outfile.write(evt_arg)
                             outfile.write("%s\n" % ip_addresses)
 
 class Analyzer:
@@ -337,10 +337,11 @@ class Analyzer:
         aux_enabled, aux_avail = self.run_auxiliary()
 
         with open('linux.log', "a") as outfile:
-            file_info = subprocess.Popen(['file', self.target], stdout=subprocess.PIPE)
-            if "dynamically linked" in file_info.communicate()[0]:
-                outfile.write("SHARED LIBRARY DEPENDENCIES\n")
-                subprocess.call(['ldd', self.target], stdout=outfile)
+            #file_info = subprocess.Popen(['file', self.target], stdout=subprocess.PIPE)
+            #if "dynamically linked" in file_info.communicate()[0]:
+            outfile.write("SHARED LIBRARY DEPENDENCIES\n")
+            subprocess.call(['ldd', self.target], stdout=outfile)
+            # lsof -P -T -p Application_PID  8 po redu su imena
             outfile.write("\n\n===========================\n\n       IP ADDRESSES\n")
 
         # call execute method + monitor (and parser)
@@ -452,7 +453,7 @@ class Analyzer:
                 log.warning("Exception running finish callback of auxiliary "
                             "module %s: %s", aux.__class__.__name__, e)
 
-        upload_to_host('hablo', 'logs/hablo')
+        upload_to_host('linux.log', 'logs/linux.log')
         # Let's invoke the completion procedure.
         self.complete()
 
