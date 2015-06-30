@@ -27,16 +27,10 @@ log = logging.getLogger()
 FILES_LIST = []
 DUMPED_LIST = []
 PROCESS_LIST = []
-
+dump_events = False
 
 class CuckooPackageError(Exception):
     pass
-
-
-def test_run():
-    print "Printing inside guest machine"
-    # subprocess.call(['sudo', 'sysdig', '-w', '/home/nidzo/trace.scap'])
-    subprocess.call(['sudo', 'sysdig'])
 
 
 def add_pid(pid):
@@ -144,32 +138,18 @@ def execute(pid):
     lines_iterator = iter(sysdig_monitor.stdout.readline, b"")
 
     for event in lines_iterator:
-        parser.process(event)
+        parser.process(event, dump_events)
 
-def execute2():
-    sysdig_monitor = subprocess.Popen(['sudo', 'sysdig', '-s 2000', '-A',
-                              '-c%s' % 'echo_fds', 'fd.port=80 and evt.buffer contains GET'],
-                             stdout=subprocess.PIPE)
-    lines_iterator = iter(sysdig_monitor.stdout.readline, b"")
-    for event in lines_iterator:
-        event_info = event.split()
-        if event_info > 0:
-            if 'Write' in event_info:
-                ip_adresses = event_info[5]
-            elif 'GET' in event_info:
-                link = event_info[1]
-            elif 'Host:' in event_info:
-                host = event_info[1]
-                print '================================================================'
-                print "SALJEM NA OBRADU: ", (ip_adresses, link, host)
-                print '================================================================'
-                time.sleep(5)
 
 class SysdigParser:
     def __init__(self):
         pass
 
     def process(self, event):
+        if dump_events:
+            with open('events.log', "a") as outfile:
+                outfile.write("%s\n" % event)
+
         event_info = event.split()
         (evt_num, evt_time, evt_cpu, proc_name, thread_tid, evt_dir, evt_type), evt_args = \
             event_info[:7], event_info[8:]
@@ -177,13 +157,13 @@ class SysdigParser:
         # In case of open or creat, the client is trying to notify the creation
         # of a new file.
         if (evt_type == 'open' or evt_type == 'creat') and evt_dir == '<':
+            if any("O_RDONLY" in evt_arg for evt_arg in evt_args):
+                return
             for evt_arg in evt_args:
                 # args: name=file_name(file_path)
                 if evt_arg.startswith('name='):
                     # We extract the file path.
-                    #file_path = evt_arg.split('(')[1][:-1]
-                    file_name = evt_arg[5:]
-                    file_path = os.path.abspath(file_name)
+                    file_path = evt_arg[evt_arg.find("(")+1:evt_arg.find(")")]
                     # We add the file to the list.
                     add_file(file_path)
 
@@ -192,7 +172,7 @@ class SysdigParser:
             file_path = evt_args[5:]
             del_file(file_path)
 
-        elif evt_type == 'unlinkat' and evt_dir == '>':
+        elif evt_type == 'unlinkatMOZDAAA' and evt_dir == '>':
             for evt_arg in evt_args:
                 if evt_arg.startswith('name='):
                     file_name = evt_arg[5:]
@@ -214,16 +194,20 @@ class SysdigParser:
             for evt_arg in evt_args:
                 if evt_arg.startswith('tuple='):
                     ip_addresses = evt_arg[6:]
+                    if ip_addresses.startswith('0->'):
+                        continue
                     if not ip_addresses == '0.0.0.0:0->0.0.0.0:0':
                         with open('linux.log', "a") as outfile:
                             #outfile.write(evt_arg)
-                            outfile.write("%s\n" % ip_addresses)
+                            outfile.write("\n%s" % ip_addresses)
+
 
 class Analyzer:
     def __init__(self):
         self.config = None
         self.target = None
         self.pids = []
+        self.dump_events = True
 
     def set_pids(self, pids):
         """Update list of monitored PIDs in the package context.
@@ -256,9 +240,7 @@ class Analyzer:
         print self.config.file_name
 
         if self.config.category == "file":
-            # self.target = os.path.join(tempfile.gettempdir(), str(self.config.file_name))
             self.target = os.path.join('/tmp', str(self.config.file_name))
-            # self.target = os.path.join(PATHS["temp"], str(self.config.file_name))
 
         # If it's a URL, well.. we store the URL.
         else:
@@ -295,7 +277,6 @@ class Analyzer:
                 aux_avail.append(aux)
 
                 aux.start()
-                print "SCREENSHOT!"
             except (NotImplementedError, AttributeError):
                 log.warning("Auxiliary module %s was not implemented",
                             aux.__class__.__name__)
@@ -316,12 +297,7 @@ class Analyzer:
 
         os.chmod(path, 0755)
         process = subprocess.Popen(['/bin/bash', '-c', path])
-        # proc = subprocess.Popen([sys.executable, path])
-        # proc = subprocess.Popen(path, shell=True)  # security holes
-
-        print "PID:", process.pid
-
-        # print "Return code:", proc.wait()
+        print "PID: ", process.pid
 
         return process
 
@@ -339,10 +315,8 @@ class Analyzer:
         with open('linux.log', "a") as outfile:
             #file_info = subprocess.Popen(['file', self.target], stdout=subprocess.PIPE)
             #if "dynamically linked" in file_info.communicate()[0]:
-            outfile.write("SHARED LIBRARY DEPENDENCIES\n")
             subprocess.call(['ldd', self.target], stdout=outfile)
             # lsof -P -T -p Application_PID  8 po redu su imena
-            outfile.write("\n\n===========================\n\n       IP ADDRESSES\n")
 
         # call execute method + monitor (and parser)
         try:
@@ -355,12 +329,6 @@ class Analyzer:
         pids = process.pid
         monitor_thread = threading.Thread(target=execute, args=(pids,))
         monitor_thread.start()
-
-        #network_monitor_thread = threading.Thread(target=execute2)
-        #network_monitor_thread.start()
-
-        # sysdig_monitor = subprocess.Popen(['sudo', 'sysdig', 'proc.pid = ', '%s' % pids], stdout=subprocess.PIPE)
-
 
         # If the analysis package returned a list of process IDs, we add them
         # to the list of monitored processes and enable the process monitor.
@@ -394,9 +362,6 @@ class Analyzer:
                 # the monitored processes are still alive.
                 if pid_check:
                     for pid in PROCESS_LIST:
-                        # deadlock because reading from stdout subporecss.PIPE
-                        # poll() fixed it
-                        process.poll()
                         if not is_process_alive(pid):
                             log.info("Process with pid %s has terminated", pid)
                             PROCESS_LIST.remove(pid)
@@ -454,6 +419,8 @@ class Analyzer:
                             "module %s: %s", aux.__class__.__name__, e)
 
         upload_to_host('linux.log', 'logs/linux.log')
+        if dump_events:
+            upload_to_host('events.log', 'logs/events.log')
         # Let's invoke the completion procedure.
         self.complete()
 

@@ -12,7 +12,7 @@ from lib.common.results import upload_to_host
 import gtk.gdk
 
 log = logging.getLogger(__name__)
-SHOT_DELAY = 1  # Minimum 0.338 0.4
+SHOT_DELAY = 1  # Minimum 0.33
 # Skip the following area when comparing screen shots.
 # Example for 800x600 screen resolution.
 # SKIP_AREA = ((735, 575), (790, 595))
@@ -54,7 +54,6 @@ class Screenshots(Auxiliary, Thread):
 
         while self.do_run:
             time.sleep(SHOT_DELAY)
-            start_time = time.time()
 
             try:
                 img_current = take()
@@ -68,7 +67,5 @@ class Screenshots(Auxiliary, Thread):
             # Sending photo...
             upload_to_host('/tmp/screenshot.jpg', "shots/%s.jpg" % str(img_counter).rjust(4, "0"))
             os.unlink('/tmp/screenshot.jpg')
-
-            # TO JE 0.338
 
         return True

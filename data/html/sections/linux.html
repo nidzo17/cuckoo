@@ -1,0 +1,22 @@
+<section id="static">
+    <div class="section-title">
+        <h4>Linux Analysis</h4>
+    </div>
+        {% if results.linux.dependencies %}
+            <h4><a href="javascript:showHide('dependencies');">Shared Dependencies</a></h4>
+            <div id="dependencies" style="display: none;">
+                    {% for info in results.linux.dependencies %}
+                        <b> {{info}}</b> <br>
+                    {% endfor %}
+            </div>
+        {% endif %}
+
+        {% if results.linux.dependencies %}
+            <h4><a href="javascript:showHide('ip_address');">IP Addresses</a></h4>
+            <div id="ip_address" style="display: none;">
+                {% for info in results.linux.ip_address %}
+                     <b> {{info}}</b> <br>
+                {% endfor %}
+            </div>
+        {% endif %}
+</section>
