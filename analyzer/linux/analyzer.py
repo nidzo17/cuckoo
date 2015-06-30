@@ -27,7 +27,7 @@ log = logging.getLogger()
 FILES_LIST = []
 DUMPED_LIST = []
 PROCESS_LIST = []
-dump_events = False
+dump_events = True
 
 class CuckooPackageError(Exception):
     pass
@@ -172,7 +172,7 @@ class SysdigParser:
             file_path = evt_args[5:]
             del_file(file_path)
 
-        elif evt_type == 'unlinkatMOZDAAA' and evt_dir == '>':
+        elif evt_type == 'unlinkat' and evt_dir == '>':
             for evt_arg in evt_args:
                 if evt_arg.startswith('name='):
                     file_name = evt_arg[5:]
