@@ -138,7 +138,7 @@ def execute(pid):
     lines_iterator = iter(sysdig_monitor.stdout.readline, b"")
 
     for event in lines_iterator:
-        parser.process(event, dump_events)
+        parser.process(event)
 
 
 class SysdigParser:
@@ -207,7 +207,6 @@ class Analyzer:
         self.config = None
         self.target = None
         self.pids = []
-        self.dump_events = True
 
     def set_pids(self, pids):
         """Update list of monitored PIDs in the package context.
